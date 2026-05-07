@@ -1,4 +1,4 @@
-<#
+﻿<#
     Logiciel libre sous licence GNU GPL v3.0 — https://www.gnu.org/licenses/
     Utilisé par slyraf.com — https://slyraf.com/wuthering-waves/pull_tracker/
 #>
