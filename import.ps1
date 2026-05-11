@@ -1,6 +1,6 @@
 <#
     Logiciel libre sous licence GNU GPL v3.0 - https://www.gnu.org/licenses/
-    Utilise par slyraf.com - https://slyraf.com/wuthering-waves/pull_tracker/
+    Utilise par slyraf.com - https://slyraf.com/wuthering-waves/pull-tracker/
 #>
 
 Add-Type -AssemblyName System.Web
@@ -12,14 +12,37 @@ $journaux     = [System.Collections.Generic.List[PSCustomObject]]::new()
 $prefErrOrig  = $ErrorActionPreference
 $estAdmin     = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
+# ── Bannière ──────────────────────────────────────────────────
+Clear-Host
 Write-Host ""
+Write-Host "  ╔═══════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "  ║   Slyraf - Tracker d'Invocations WuWa    ║" -ForegroundColor Cyan
+Write-Host "  ║          Importeur automatique            ║" -ForegroundColor Cyan
+Write-Host "  ╚═══════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host ""
+
 if ($estAdmin) {
-    Write-Host ">> Mode administrateur" -ForegroundColor DarkMagenta
+    Write-Host "  Mode administrateur" -ForegroundColor DarkMagenta
 } else {
-    Write-Host ">> Mode utilisateur standard" -ForegroundColor DarkMagenta
+    Write-Host "  Mode utilisateur standard" -ForegroundColor DarkMagenta
 }
+
+# ── Checklist ─────────────────────────────────────────────────
 Write-Host ""
-Write-Host "Recherche de l'URL en cours..." -ForegroundColor Cyan
+Write-Host "  Avant de continuer, assure-toi d'avoir :" -ForegroundColor White
+Write-Host ""
+Write-Host "  [v] Ouvert Wuthering Waves" -ForegroundColor Green
+Write-Host "  [v] Clique sur ""Convier"" dans le jeu" -ForegroundColor Green
+Write-Host "  [v] Ouvert l'historique d'invocations" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Recherche de ton historique dans 3 secondes..." -ForegroundColor DarkGray
+Start-Sleep -Seconds 3
+
+# ── Recherche ─────────────────────────────────────────────────
+Write-Host ""
+Write-Host "  Recherche de ton historique en cours" -ForegroundColor Cyan -NoNewline
+foreach ($_ in 1..10) { Write-Host "." -ForegroundColor Cyan -NoNewline; Start-Sleep -Milliseconds 200 }
+Write-Host ""
 Write-Host ""
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -35,16 +58,22 @@ function TrouverJournauxDansDossier($dossier) {
     if (Test-Path $iniPath) {
         $ini = Get-Content $iniPath -Raw
         if ($ini -match '\[Core\.Log\][\r\n]+Global=(off|none)') {
-            Write-Host "ATTENTION : Les journaux sont desactives dans Engine.ini, l'import est impossible." -ForegroundColor Red
-            $rep = Read-Host "Voulez-vous qu'on corrige automatiquement ce fichier ? (O/N)"
+            Write-Host ""
+            Write-Host "  [!]  Les journaux du jeu sont desactives, l'import est impossible." -ForegroundColor Red
+            Write-Host "       On peut corriger ca automatiquement." -ForegroundColor Yellow
+            Write-Host ""
+            $rep = Read-Host "  Corriger automatiquement ? (O/N)"
             if ($rep -notmatch '^[Oo]$') {
-                Write-Host "Annule. Appuyez sur une touche pour quitter." -ForegroundColor Red
+                Write-Host ""
+                Write-Host "  Annule. Appuie sur une touche pour fermer." -ForegroundColor Red
                 $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
                 exit
             }
 
             if (-not $estAdmin) {
-                $relance = Read-Host "Des droits administrateur sont necessaires. Relancer en admin ? (O/N)"
+                Write-Host ""
+                Write-Host "  Des droits administrateur sont necessaires pour cette correction." -ForegroundColor Yellow
+                $relance = Read-Host "  Relancer en administrateur ? (O/N)"
                 if ($relance -match '^[Oo]$') {
                     $cmd = '-NoProfile -Command "iwr -UseBasicParsing -Headers @{''User-Agent''=''"Mozilla/5.0""''} https://raw.githubusercontent.com/slyraff/wuwa-invocations-tracker/main/import.ps1 | iex"'
                     Start-Process powershell.exe -ArgumentList $cmd -Verb RunAs
@@ -55,7 +84,11 @@ function TrouverJournauxDansDossier($dossier) {
             Copy-Item -Path $iniPath -Destination "$iniPath.backup" -Force
             $nouveauIni = $ini -replace '\[Core\.Log\][^\[]*', ''
             Set-Content -Path $iniPath -Value $nouveauIni
-            Write-Host "Fichier corrige. Relancez le jeu, ouvrez l'historique d'invocations, puis relancez ce script." -ForegroundColor Green
+            Write-Host ""
+            Write-Host "  [OK] Fichier corrige !" -ForegroundColor Green
+            Write-Host "       Relance le jeu, ouvre l'historique d'invocations, puis relance ce script." -ForegroundColor White
+            Write-Host ""
+            Write-Host "  Appuie sur une touche pour fermer." -ForegroundColor DarkGray
             $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
             exit
         }
@@ -65,8 +98,9 @@ function TrouverJournauxDansDossier($dossier) {
         $acl = Get-Acl -Path $clientLog
         $refus = $acl.Access | Where-Object { $_.AccessControlType -eq 'Deny' -and $_.FileSystemRights -match 'Read' }
         if ($refus) {
-            Write-Warning "$($refus.Count) regle(s) de refus bloquent la lecture du journal."
-            $rep = Read-Host "Supprimer ces restrictions ? (O/N)"
+            Write-Host ""
+            Write-Host "  [!]  Des restrictions bloquent la lecture du journal." -ForegroundColor Yellow
+            $rep = Read-Host "  Supprimer ces restrictions ? (O/N)"
             if ($rep -match '^[Oo]$') {
                 foreach ($r in $refus) {
                     $id = $r.IdentityReference.Value
@@ -79,7 +113,7 @@ function TrouverJournauxDansDossier($dossier) {
                 }
                 takeown /F "$clientLog" | Out-Null
                 icacls "$clientLog" /grant Administrators:F /C | Out-Null
-                Write-Host "Permissions reparees." -ForegroundColor Green
+                Write-Host "  [OK] Permissions reparees." -ForegroundColor Green
             }
         }
     }
@@ -92,7 +126,6 @@ function TrouverJournauxDansDossier($dossier) {
             if ($info) {
                 $trouve = $true
                 $journaux.Add([PSCustomObject]@{ Chemin = $log.chemin; Type = $log.type; Date = $info.LastWriteTime })
-                Write-Host "  Trouve : $($log.chemin)" -ForegroundColor DarkGray
             }
         }
     }
@@ -126,7 +159,6 @@ function ScannerDossier($chemin) {
 
 function ChercherDansTousLesLecteurs {
     $lecteurs = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Name
-    Write-Host "Scan des lecteurs : $($lecteurs -join ', ')" -ForegroundColor Yellow
 
     foreach ($l in [char[]](65..90)) {
         $d = "$($l):"
@@ -188,35 +220,52 @@ try {
 ChercherDansTousLesLecteurs
 
 
+# ── Analyse des journaux trouvés ──────────────────────────────
 if ($journaux.Count -gt 0) {
-    Write-Host ""
-    Write-Host "$($journaux.Count) journal(aux) trouve(s). Analyse en cours..." -ForegroundColor Cyan
-
     foreach ($j in ($journaux | Sort-Object Date -Descending)) {
         $url = ExtraireUrl $j
         if ($url) {
             $urlTrouvee = $true
-            Write-Host ""
-            Write-Host "URL trouvee !" -ForegroundColor Green
-            Write-Host "$url"
             Set-Clipboard $url
             Write-Host ""
-            Write-Host "Lien copie dans le presse-papiers. Rendez-vous sur slyraf.com/wuthering-waves/pull_tracker/ et collez-le." -ForegroundColor Green
+            Write-Host "  ╔═══════════════════════════════════════════╗" -ForegroundColor Green
+            Write-Host "  ║  [OK] Lien copie dans ton presse-papiers !║" -ForegroundColor Green
+            Write-Host "  ╚═══════════════════════════════════════════╝" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "  Maintenant :" -ForegroundColor White
+            Write-Host "  1. Retourne sur slyraf.com" -ForegroundColor White
+            Write-Host "  2. Colle le lien dans la case  (Ctrl+V)" -ForegroundColor White
+            Write-Host "  3. Clique sur Importer" -ForegroundColor White
+            Write-Host ""
+            Write-Host "  Tu peux fermer cette fenetre." -ForegroundColor DarkGray
+            Write-Host ""
             break
         }
     }
 
     if (!$urlTrouvee) {
-        Write-Host "Des journaux ont ete trouves mais ils ne contiennent pas d'URL d'invocations." -ForegroundColor Yellow
-        Write-Host "Ouvrez d'abord l'historique d'invocations en jeu, puis relancez ce script." -ForegroundColor Yellow
+        Write-Host "  [!]  On a trouve ton jeu, mais pas l'historique." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  → Retourne dans Wuthering Waves" -ForegroundColor White
+        Write-Host "  → Clique sur ""Convier""" -ForegroundColor White
+        Write-Host "  → Ouvre n'importe quel historique de banniere" -ForegroundColor White
+        Write-Host "  → Reviens ici et appuie sur Entree pour reessayer" -ForegroundColor White
+        Write-Host ""
+        Read-Host "  Appuie sur Entree quand c'est fait"
     }
 }
 
 
+# ── Rien trouvé — proposer admin ──────────────────────────────
 if (!$urlTrouvee -and $journaux.Count -eq 0 -and -not $estAdmin) {
     Write-Host ""
-    Write-Host "Rien trouve. Certains dossiers necessitent peut-etre des droits administrateur." -ForegroundColor Yellow
-    $rep = Read-Host "Relancer en administrateur ? (O/N)"
+    Write-Host "  [X]  On n'a pas reussi a trouver ton jeu automatiquement." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Raisons possibles :" -ForegroundColor White
+    Write-Host "  → Tu n'as pas encore ouvert l'historique d'invocations en jeu" -ForegroundColor DarkGray
+    Write-Host "  → Wuthering Waves est installe dans un dossier inhabituel" -ForegroundColor DarkGray
+    Write-Host ""
+    $rep = Read-Host "  Relancer en administrateur ? (O/N)"
     if ($rep -match '^[Oo]$') {
         $cmd = '-NoProfile -Command "iwr -UseBasicParsing -Headers @{''User-Agent''=''"Mozilla/5.0""''} https://raw.githubusercontent.com/slyraff/wuwa-invocations-tracker/main/import.ps1 | iex"'
         Start-Process powershell.exe -ArgumentList $cmd -Verb RunAs
@@ -226,36 +275,36 @@ if (!$urlTrouvee -and $journaux.Count -eq 0 -and -not $estAdmin) {
 
 $ErrorActionPreference = $prefErrOrig
 
-if (!$urlTrouvee) {
-    Write-Host $erreurs -ForegroundColor Magenta
-}
 
-
+# ── Saisie manuelle ───────────────────────────────────────────
 while (!$urlTrouvee) {
     Write-Host ""
-    Write-Host "Impossible de trouver automatiquement le jeu." -ForegroundColor Red
-    Write-Host "Avez-vous bien ouvert l'historique d'invocations en jeu avant de lancer ce script ?" -ForegroundColor Yellow
+    Write-Host "  [X]  Toujours rien trouve, meme en administrateur." -ForegroundColor Red
     Write-Host ""
-    Write-Host "Si le probleme persiste, visitez : https://slyraf.com/wuthering-waves/pull_tracker/"
+    Write-Host "  Entre le chemin ou Wuthering Waves est installe." -ForegroundColor White
     Write-Host ""
-    Write-Host "Emplacements d'installation courants :"
-    Write-Host "  C:\Wuthering Waves\Wuthering Waves Game" -ForegroundColor Yellow
-    Write-Host "  C:\Program Files\Wuthering Waves\Wuthering Waves Game" -ForegroundColor Yellow
-    Write-Host "  C:\Program Files\Epic Games\WutheringWavesj3oFh\Wuthering Waves Game" -ForegroundColor Yellow
-    Write-Host "  C:\Steam\steamapps\common\Wuthering Waves" -ForegroundColor Yellow
+    Write-Host "  Exemples :" -ForegroundColor DarkGray
+    Write-Host "  →  C:\Wuthering Waves\Wuthering Waves Game" -ForegroundColor DarkGray
+    Write-Host "  →  C:\Program Files\Epic Games\WutheringWavesj3oFh" -ForegroundColor DarkGray
+    Write-Host "  →  D:\Steam\steamapps\common\Wuthering Waves" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  Si tu es bloque, visite : slyraf.com/wuthering-waves/pull-tracker/" -ForegroundColor DarkGray
     Write-Host ""
 
-    $chemin = Read-Host "Entrez le chemin d'installation manuellement (ou 'quitter')"
+    $chemin = Read-Host "  Chemin (ou ""quitter"")"
     if (!$chemin -or $chemin.ToLower() -eq "quitter") { break }
 
     $df, $jf = TrouverJournauxDansDossier $chemin
 
     if (!$df) {
-        Write-Host "Dossier introuvable : $chemin" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  [X]  Dossier introuvable. Verifie que le chemin est correct." -ForegroundColor Red
         continue
     }
     if (!$jf) {
-        Write-Host "Dossier trouve mais aucun journal dedans. Avez-vous ouvert l'historique d'invocations en jeu ?" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  [!]  Dossier trouve, mais aucun historique dedans." -ForegroundColor Yellow
+        Write-Host "       Ouvre d'abord l'historique d'invocations dans le jeu." -ForegroundColor White
         continue
     }
 
@@ -263,17 +312,26 @@ while (!$urlTrouvee) {
         $url = ExtraireUrl $j
         if ($url) {
             $urlTrouvee = $true
-            Write-Host ""
-            Write-Host "URL trouvee !" -ForegroundColor Green
-            Write-Host "$url"
             Set-Clipboard $url
             Write-Host ""
-            Write-Host "Lien copie ! Collez-le sur slyraf.com/wuthering-waves/pull_tracker/" -ForegroundColor Green
+            Write-Host "  ╔═══════════════════════════════════════════╗" -ForegroundColor Green
+            Write-Host "  ║  [OK] Lien copie dans ton presse-papiers !║" -ForegroundColor Green
+            Write-Host "  ╚═══════════════════════════════════════════╝" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "  Maintenant :" -ForegroundColor White
+            Write-Host "  1. Retourne sur slyraf.com" -ForegroundColor White
+            Write-Host "  2. Colle le lien dans la case  (Ctrl+V)" -ForegroundColor White
+            Write-Host "  3. Clique sur Importer" -ForegroundColor White
+            Write-Host ""
+            Write-Host "  Tu peux fermer cette fenetre." -ForegroundColor DarkGray
+            Write-Host ""
             break
         }
     }
 
     if (!$urlTrouvee) {
-        Write-Host "Journal trouve mais sans URL. Ouvrez d'abord l'historique d'invocations en jeu." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  [!]  Historique trouve mais sans URL d'invocations." -ForegroundColor Yellow
+        Write-Host "       Ouvre d'abord l'historique d'invocations dans le jeu." -ForegroundColor White
     }
 }
