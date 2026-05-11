@@ -12,7 +12,7 @@ $journaux     = [System.Collections.Generic.List[PSCustomObject]]::new()
 $prefErrOrig  = $ErrorActionPreference
 $estAdmin     = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-# -- BanniÃ¨re --------------------------------------------------
+# -- Bannière --------------------------------------------------
 Clear-Host
 Write-Host ""
 Write-Host "  +-------------------------------------------+" -ForegroundColor Cyan
@@ -38,7 +38,7 @@ Write-Host "   [OK]  Clique sur ""Convier"" dans le jeu"       -ForegroundColor 
 Write-Host "   [OK]  Ouvert l'historique d'invocations"        -ForegroundColor Green
 Write-Host ""
 
-# -- Recherche (sans dÃ©lai) ------------------------------------
+# -- Recherche (sans délai) ------------------------------------
 Write-Host "  Recherche en cours" -ForegroundColor Cyan -NoNewline
 foreach ($_ in 1..10) { Write-Host "." -ForegroundColor Cyan -NoNewline; Start-Sleep -Milliseconds 200 }
 Write-Host ""
@@ -219,7 +219,7 @@ try {
 ChercherDansTousLesLecteurs
 
 
-# -- SuccÃ¨s : URL trouvÃ©e ---------------------------------------
+# -- Succès : URL trouvée ---------------------------------------
 function AfficherSucces {
     Write-Host ""
     Write-Host "  +-------------------------------------------+" -ForegroundColor Green
@@ -240,7 +240,7 @@ function AfficherSucces {
 }
 
 
-# -- Analyse des journaux trouvÃ©s ------------------------------
+# -- Analyse des journaux trouvés ------------------------------
 if ($journaux.Count -gt 0) {
     foreach ($j in ($journaux | Sort-Object Date -Descending)) {
         $url = ExtraireUrl $j
@@ -265,7 +265,7 @@ if ($journaux.Count -gt 0) {
 }
 
 
-# -- Rien trouvÃ© â€” proposer admin ------------------------------
+# -- Rien trouvé — proposer admin ------------------------------
 if (!$urlTrouvee -and $journaux.Count -eq 0 -and -not $estAdmin) {
     Write-Host ""
     Write-Host "  [X]  On n'a pas reussi a trouver ton jeu automatiquement." -ForegroundColor Red
