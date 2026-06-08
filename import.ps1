@@ -1,26 +1,28 @@
 <#
     [Licence]
     Script sous licence GNU General Public License v3.0 (GPL-3.0).
+    Copyright (C) 2026 Luzefiru. Adapte pour slyraf.com par Slyraf (2026).
+    Texte complet : <https://www.gnu.org/licenses/>
 
-    Copyright (C) 2026 Luzefiru
-    Adapté pour slyraf.com par Slyraf (2026) — même licence GPL-3.0.
-
-    Ce programme est un logiciel libre : vous pouvez le redistribuer et/ou le modifier
-    selon les termes de la GNU General Public License telle que publiée par la Free
-    Software Foundation, soit la version 3 de la licence, soit (à votre choix) toute
-    version ultérieure. Ce programme est distribué dans l'espoir qu'il sera utile,
-    mais SANS AUCUNE GARANTIE.
-
-    Texte complet de la licence : <https://www.gnu.org/licenses/>
-
-    [Crédits]
-    - Basé sur le script d'import de WuWa Tracker (https://wuwatracker.com)
-    - Créé à l'origine par @theREalpha, inspiré par astrite.gg
-    - Merci à @antisocial93, @timas130, @mei.yue, @phenom, @thekiwibirdddd
-    - Merci à @RabbyDevs / @kyuxu pour le décodeur XOR du Client.log
+    [Credits]
+    - Base : script d'import WuWa Tracker (https://wuwatracker.com)
+    - @theREalpha (auteur original), inspire par astrite.gg
+    - @antisocial93, @timas130, @mei.yue, @phenom, @thekiwibirdddd
+    - @RabbyDevs / @kyuxu : decodeur XOR du Client.log
 #>
 
+# ============================================================
+#  Force UTF-8 dans la console PowerShell (sinon accents = ?)
+# ============================================================
+try {
+    $null = chcp 65001
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+    $OutputEncoding = [System.Text.UTF8Encoding]::new()
+} catch {}
+
 Add-Type -AssemblyName System.Web
+
+# === Etat global ===
 $gamePath = $null
 $urlFound = $false
 $logFound = $false
@@ -35,42 +37,83 @@ $SlyrafScriptUrl  = 'https://raw.githubusercontent.com/slyraff/wuwa-invocations-
 $SlyrafTrackerUrl = 'https://slyraf.com/wuthering-waves/pull-tracker/'
 
 # ============================================================
-#  Palette "pro classic" : Cyan = info, Gray = neutre,
-#  Green = succès, Yellow = warn, Red = erreur, DarkGray = debug.
+#  Affichage : preflxes alignes + spinner inline
 # ============================================================
 
 function Write-Brand {
     Write-Host ""
-    Write-Host "   ____  _                       __" -ForegroundColor Cyan
-    Write-Host "  / ___|| |_   _ _ __ __ _ / _|" -ForegroundColor Cyan
-    Write-Host "  \___ \| | | | | '__/ _``| |_" -ForegroundColor Cyan
-    Write-Host "   ___) | | |_| | | | (_| |  _|" -ForegroundColor Cyan
-    Write-Host "  |____/|_|\__, |_|  \__,_|_|" -ForegroundColor Cyan
-    Write-Host "           |___/" -ForegroundColor Cyan
-    Write-Host "  WuWa Pull Tracker — Importateur d'historique" -ForegroundColor DarkCyan
-    Write-Host "  $SlyrafTrackerUrl" -ForegroundColor DarkGray
-    Write-Host "  ─────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host "================================================================" -ForegroundColor DarkCyan
+    Write-Host "   ____   _                          __"                          -ForegroundColor Cyan
+    Write-Host "  / ___| | |_   _  _ __  __ _   __ _/ _|"                         -ForegroundColor Cyan
+    Write-Host "  \___ \ | || | | || '__|/ _``| / _``| |_"                        -ForegroundColor Cyan
+    Write-Host "   ___) || || |_| || |  | (_| || (_| |  _|"                       -ForegroundColor Cyan
+    Write-Host "  |____/ |_| \__, ||_|   \__,_| \__,_|_|"                         -ForegroundColor Cyan
+    Write-Host "             |___/"                                               -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  WuWa Pull Tracker - Importateur d'historique"                   -ForegroundColor White
+    Write-Host "  $SlyrafTrackerUrl"                                              -ForegroundColor DarkGray
+    Write-Host "================================================================" -ForegroundColor DarkCyan
     Write-Host ""
 }
 
-function Write-Step  { param($m) Write-Host "[ÉTAPE] $m" -ForegroundColor Cyan }
-function Write-Info  { param($m) Write-Host "[INFO]  $m" -ForegroundColor Gray }
-function Write-Ok    { param($m) Write-Host "[OK]    $m" -ForegroundColor Green }
-function Write-Warn2 { param($m) Write-Host "[WARN]  $m" -ForegroundColor Yellow }
-function Write-Err   { param($m) Write-Host "[ERREUR] $m" -ForegroundColor Red }
-function Write-Debug2 { param($m) Write-Host "        $m" -ForegroundColor DarkGray }
+function Write-Info  { param($m) Write-Host "[INFO]    $m" -ForegroundColor Gray }
+function Write-Ok    { param($m) Write-Host "[OK]      $m" -ForegroundColor Green }
+function Write-Warn2 { param($m) Write-Host "[ATTENT]  $m" -ForegroundColor Yellow }
+function Write-Err   { param($m) Write-Host "[ERREUR]  $m" -ForegroundColor Red }
+
+# Spinner inline. Ecrit sur une seule ligne, mise a jour avec `r.
+$script:SpinFrames = @('|','/','-','\')
+$script:SpinIndex  = 0
+$script:SpinActive = $false
+$script:SpinMsg    = ''
+$script:SpinWidth  = 0
+
+function Start-Spin {
+    param([string]$msg)
+    $script:SpinActive = $true
+    $script:SpinIndex  = 0
+    $script:SpinMsg    = $msg
+    $line = "[ . ]     $msg"
+    $script:SpinWidth = $line.Length
+    Write-Host -NoNewline "`r$line" -ForegroundColor Cyan
+}
+
+function Step-Spin {
+    param([string]$sub)
+    if (-not $script:SpinActive) { return }
+    $frame = $script:SpinFrames[$script:SpinIndex % $script:SpinFrames.Length]
+    $script:SpinIndex++
+    $base = "[ $frame ]     $($script:SpinMsg)"
+    if ($sub) { $base = "$base  -  $sub" }
+    # Pad pour effacer les caracteres restants de l'iteration precedente
+    if ($base.Length -lt $script:SpinWidth) {
+        $base = $base.PadRight($script:SpinWidth)
+    }
+    $script:SpinWidth = $base.Length
+    Write-Host -NoNewline "`r$base" -ForegroundColor Cyan
+}
+
+function Stop-Spin {
+    param([string]$result = $null, [string]$tag = 'OK', [System.ConsoleColor]$color = 'Green')
+    if (-not $script:SpinActive) { return }
+    $script:SpinActive = $false
+    $line = "[$tag]      $($script:SpinMsg)"
+    if ($result) { $line = "$line  -  $result" }
+    if ($line.Length -lt $script:SpinWidth) {
+        $line = $line.PadRight($script:SpinWidth)
+    }
+    Write-Host "`r$line" -ForegroundColor $color
+}
 
 Write-Brand
 
 if ($IsAdmin) {
-    Write-Info "Exécution en tant qu'Administrateur."
+    Write-Info "Execution en tant qu'Administrateur."
 } else {
-    Write-Info "Exécution en tant qu'Utilisateur standard."
+    Write-Info "Execution en tant qu'utilisateur standard."
 }
 
 $ErrorActionPreference = "SilentlyContinue"
-
-Write-Step "Recherche automatique de l'URL d'historique..."
 
 $Script:collectedLogFiles = [System.Collections.Generic.List[PSCustomObject]]::new()
 
@@ -91,21 +134,22 @@ function LogCheck {
     if (Test-Path $engineIniPath) {
         $engineIniContent = Get-Content $engineIniPath -Raw
         if ($engineIniContent -match '\[Core\.Log\][\r\n]+Global=(off|none)') {
-            Write-Err "Engine.ini désactive la journalisation. Sans ça, impossible d'extraire l'URL."
-            Write-Info "Fichier concerné : $engineIniPath"
-            Write-Warn2 "Procédure automatique : on backup le fichier et on retire la section [Core.Log]."
-            $confirmation = Read-Host "Procéder ? (O/N)"
+            Stop-Spin -tag 'ERREUR' -color Red -result 'Engine.ini desactive les logs'
+            Write-Err "Engine.ini contient une section qui empeche l'import."
+            Write-Info "Fichier : $engineIniPath"
+            Write-Warn2 "Reparation auto : backup + suppression de la section [Core.Log]."
+            $confirmation = Read-Host "Proceder ? (O/N)"
             if ($confirmation -notmatch '^[OoYy]$') {
-                Write-Err "Import annulé. Corrige Engine.ini manuellement puis relance."
+                Write-Err "Import annule. Corrige Engine.ini manuellement puis relance."
                 $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
                 exit
             }
 
             if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-                Write-Warn2 "Droits administrateur requis pour modifier Engine.ini."
-                $retry = Read-Host "Relancer en Administrateur ? (O/N)"
+                Write-Warn2 "Droits admin requis pour modifier Engine.ini."
+                $retry = Read-Host "Relancer en admin ? (O/N)"
                 if ($retry -match '^[OoYy]$') {
-                    Write-Info "Redémarrage avec élévation..."
+                    Write-Info "Redemarrage avec elevation..."
                     $elevatedCommand = "-NoProfile -Command `"iwr -UseBasicParsing -Headers @{'User-Agent'='Mozilla/5.0'} $SlyrafScriptUrl | iex`""
                     Start-Process powershell.exe -ArgumentList $elevatedCommand -Verb RunAs
                     exit
@@ -114,27 +158,28 @@ function LogCheck {
 
             $backupPath = $engineIniPath + ".backup"
             Copy-Item -Path $engineIniPath -Destination $backupPath -Force
-            Write-Ok "Backup créé : $backupPath"
+            Write-Ok "Backup cree : $backupPath"
 
             $newContent = $engineIniContent -replace '\[Core\.Log\][^\[]*', ''
             Set-Content -Path $engineIniPath -Value $newContent
-            Write-Ok "Engine.ini corrigé. Relance le jeu, ouvre l'Historique de Convocation, puis relance ce script."
+            Write-Ok "Engine.ini repare. Relance le jeu, ouvre l'Historique de Convocation, puis relance ce script."
             $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
             exit
         }
     }
 
-    # Retrait des Deny ACEs sur Client.log (Kuro en pose pour bloquer la lecture)
+    # Retrait des Deny ACEs sur Client.log
     if (Test-Path $gachaLogPath) {
         try {
             $acl = Get-Acl -Path $gachaLogPath
             $denyRules = $acl.Access | Where-Object { $_.AccessControlType -eq 'Deny' -and $_.FileSystemRights -match 'Read' }
 
             if ($denyRules) {
-                Write-Warn2 "$($denyRules.Count) règle(s) DENY bloquent la lecture de Client.log."
-                $confirm = Read-Host "Retirer ces règles et réparer les permissions ? (O/N)"
+                Stop-Spin -tag 'ATTENT' -color Yellow -result "$($denyRules.Count) regle(s) DENY"
+                Write-Warn2 "$($denyRules.Count) regle(s) DENY bloquent la lecture du log."
+                $confirm = Read-Host "Retirer ces regles et reparer les permissions ? (O/N)"
                 if ($confirm -notmatch '^[OoYy]$') {
-                    Write-Info "Étape ACL ignorée par l'utilisateur."
+                    Write-Info "Etape ACL ignoree."
                 }
                 else {
                     foreach ($rule in $denyRules) {
@@ -143,24 +188,21 @@ function LogCheck {
                             if ($id -match '^S-\d-\d+-(\d+-){1,}\d+$') {
                                 $sid = New-Object System.Security.Principal.SecurityIdentifier($id)
                                 $idFriendly = $sid.Translate([System.Security.Principal.NTAccount]).Value
-                            } else {
-                                $idFriendly = $id
-                            }
+                            } else { $idFriendly = $id }
                         } catch { $idFriendly = $id }
 
-                        Write-Info "Suppression DENY pour : $idFriendly"
                         $icaclsCmd = "icacls `"$gachaLogPath`" /remove:d `"$idFriendly`" /C"
                         cmd.exe /c $icaclsCmd | Out-Null
                     }
                     takeown /F "$gachaLogPath" | Out-Null
                     icacls "$gachaLogPath" /grant Administrators:F /C | Out-Null
-                    Write-Ok "Permissions réparées."
+                    Write-Ok "Permissions reparees."
                 }
-            } else {
-                Write-Debug2 "Aucune règle DENY sur Client.log."
+                # Reprend le spinner pour la suite
+                Start-Spin -msg $script:SpinMsg
             }
         } catch {
-            Write-Warn2 "Impossible d'inspecter les ACL pour ${gachaLogPath}: $_"
+            $err += "ACL ${gachaLogPath} : $_`n"
         }
     }
 
@@ -171,7 +213,7 @@ function LogCheck {
             $Script:collectedLogFiles.Add([PSCustomObject]@{
                 Path = $gachaLogPath; Type = 'client'; LastWriteTime = $fileInfo.LastWriteTime
             })
-            Write-Debug2 "Client.log trouvé ($($fileInfo.LastWriteTime)) — $gachaLogPath"
+            $err += "[Client.log] $($fileInfo.LastWriteTime) - $gachaLogPath`n"
         }
     }
 
@@ -182,7 +224,7 @@ function LogCheck {
             $Script:collectedLogFiles.Add([PSCustomObject]@{
                 Path = $debugLogPath; Type = 'debug'; LastWriteTime = $fileInfo.LastWriteTime
             })
-            Write-Debug2 "debug.log trouvé ($($fileInfo.LastWriteTime)) — $debugLogPath"
+            $err += "[debug.log]  $($fileInfo.LastWriteTime) - $debugLogPath`n"
         }
     }
 
@@ -217,7 +259,7 @@ function GetSharedFileContent {
     return [System.Text.Encoding]::UTF8.GetString((ReadSharedFileBytes $path))
 }
 
-# Décodeur XOR pour le Client.log obfusqué (Kuro, patch récent).
+# Decodeur XOR (patch Kuro recent).
 function GetDecryptedClientLogContent {
     param([string]$path)
     $bytes = ReadSharedFileBytes $path
@@ -245,7 +287,7 @@ function ExtractUrlFromLog {
                 $urlToCopy = GetConveneUrlFromText $rawClientLogContent
             }
         }
-        catch { Write-Warn2 "Échec lecture/décodage Client.log ($($logFile.Path)) : $_" }
+        catch { $err += "Lecture Client.log : $_`n" }
     }
     elseif ($logFile.Type -eq 'debug') {
         try {
@@ -255,16 +297,15 @@ function ExtractUrlFromLog {
                 $urlToCopy = $debugUrlMatches[$debugUrlMatches.Count - 1].Groups[1].Value
             }
         }
-        catch { Write-Warn2 "Échec lecture debug.log ($($logFile.Path)) : $_" }
+        catch { $err += "Lecture debug.log : $_`n" }
     }
 
     return $urlToCopy
 }
 
 function SearchAllDiskLetters {
-    Write-Step "Balayage des disques (A-Z)..."
+    Start-Spin -msg "Balayage des disques"
     $availableDrives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Name
-    Write-Info "Disques disponibles : $($availableDrives -join ', ')"
 
     foreach ($driveLetter in [char[]](65..90)) {
         $drive = "$($driveLetter):"
@@ -294,140 +335,151 @@ function SearchAllDiskLetters {
         )
 
         foreach ($path in $gamePaths) {
+            Step-Spin -sub "disque $drive"
             if (!(Test-Path $path)) { continue }
-            Write-Info "Dossier candidat : $path"
 
-            if ($path -like "*OneDrive*") {
-                $err += "Ignoré (OneDrive) : $($path)`n"; continue
-            }
-            if ($checkedDirectories.Contains($path)) {
-                $err += "Déjà vérifié : $($path)`n"; continue
-            }
+            if ($path -like "*OneDrive*") { $err += "Ignore (OneDrive) : $path`n"; continue }
+            if ($checkedDirectories.Contains($path)) { $err += "Deja verifie : $path`n"; continue }
 
             $checkedDirectories.Add($path) | Out-Null
             $folderFound, $logFound = LogCheck $path
 
-            if ($logFound)       { $err += "Vérifié : $($path).`n" }
-            elseif ($folderFound) { $err += "Aucun log à $path`n" }
-            else                 { $err += "Aucune installation à $path`n" }
+            if ($logFound)        { $err += "Verifie : $path`n" }
+            elseif ($folderFound) { $err += "Aucun log : $path`n" }
+            else                  { $err += "Aucune install : $path`n" }
         }
     }
+    Stop-Spin -result "$($Script:collectedLogFiles.Count) log(s) trouve(s)"
 }
 
-# MUI Cache
+# ============================================================
+#  Phase 1 : MUI Cache
+# ============================================================
 if (!$urlFound) {
-    Write-Step "Lecture du MUI Cache..."
+    Start-Spin -msg "Lecture du MUI Cache"
     $muiCachePath = "Registry::HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
     try {
         $filteredEntries = (Get-ItemProperty -Path $muiCachePath -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Value -like "*wuthering*" } | Where-Object { $_.Name -like "*client-win64-shipping.exe*" }
         if ($filteredEntries.Count -ne 0) {
-            $err += "MUI Cache ($($filteredEntries.Count) entrée(s)):`n"
+            $err += "MUI Cache ($($filteredEntries.Count) entree(s)):`n"
             foreach ($entry in $filteredEntries) {
+                Step-Spin
                 $gamePath = ($entry.Name -split '\\client\\')[0]
-                if ($gamePath -like "*OneDrive*") { $err += "Ignoré (OneDrive) : $($gamePath)`n"; continue }
-                if ($checkedDirectories.Contains($gamePath)) { $err += "Déjà vérifié : $($gamePath)`n"; continue }
+                if ($gamePath -like "*OneDrive*") { $err += "Ignore (OneDrive) : $gamePath`n"; continue }
+                if ($checkedDirectories.Contains($gamePath)) { $err += "Deja verifie : $gamePath`n"; continue }
                 $checkedDirectories.Add($gamePath) | Out-Null
-                $folderFound, $logFound = LogCheck $gamePath
-                if ($logFound)       { $err += "Vérifié : $($gamePath).`n" }
-                elseif ($folderFound) { $err += "Aucun log à $gamePath`n" }
-                else                 { $err += "Aucune installation à $gamePath`n" }
+                $null = LogCheck $gamePath
             }
         } else {
-            $err += "Aucune entrée dans MUI Cache.`n"
+            $err += "Aucune entree MUI Cache.`n"
         }
-    } catch { $err += "Erreur accès MUI Cache : $_`n" }
+    } catch { $err += "Erreur MUI Cache : $_`n" }
+    Stop-Spin -result "$($Script:collectedLogFiles.Count) log(s)"
 }
 
-# Firewall
+# ============================================================
+#  Phase 2 : Pare-feu
+# ============================================================
 if (!$urlFound) {
-    Write-Step "Lecture des règles Pare-feu..."
+    Start-Spin -msg "Lecture des regles Pare-feu"
     $firewallPath = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules"
     try {
         $filteredEntries = (Get-ItemProperty -Path $firewallPath -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Value -like "*wuthering*" } | Where-Object { $_.Name -like "*client-win64-shipping*" }
         if ($filteredEntries.Count -ne 0) {
-            $err += "Pare-feu ($($filteredEntries.Count) entrée(s)):`n"
+            $err += "Pare-feu ($($filteredEntries.Count) entree(s)):`n"
             foreach ($entry in $filteredEntries) {
+                Step-Spin
                 $gamePath = (($entry.Value -split 'App=')[1] -split '\\client\\')[0]
-                if ($gamePath -like "*OneDrive*") { $err += "Ignoré (OneDrive) : $($gamePath)`n"; continue }
-                if ($checkedDirectories.Contains($gamePath)) { $err += "Déjà vérifié : $($gamePath)`n"; continue }
+                if ($gamePath -like "*OneDrive*") { $err += "Ignore (OneDrive) : $gamePath`n"; continue }
+                if ($checkedDirectories.Contains($gamePath)) { $err += "Deja verifie : $gamePath`n"; continue }
                 $checkedDirectories.Add($gamePath) | Out-Null
-                $folderFound, $logFound = LogCheck $gamePath
-                if ($logFound)       { $err += "Vérifié : $($gamePath).`n" }
-                elseif ($folderFound) { $err += "Aucun log à $gamePath`n" }
-                else                 { $err += "Aucune installation à $gamePath`n" }
+                $null = LogCheck $gamePath
             }
         } else {
-            $err += "Aucune entrée dans le pare-feu.`n"
+            $err += "Aucune entree Pare-feu.`n"
         }
-    } catch { $err += "Erreur accès pare-feu : $_`n" }
+    } catch { $err += "Erreur Pare-feu : $_`n" }
+    Stop-Spin -result "$($Script:collectedLogFiles.Count) log(s)"
 }
 
-# Registry Uninstall
+# ============================================================
+#  Phase 3 : Registre desinstallation
+#  Fix : InstallPath peut renvoyer plusieurs valeurs -> on itere
+# ============================================================
 if (!$urlFound) {
-    Write-Step "Lecture du registre Désinstallation..."
-    $64 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
-    $32 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    Start-Spin -msg "Lecture du registre Desinstallation"
+    $reg64 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    $reg32 = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
     try {
-        $gamePath = (Get-ItemProperty -Path $32, $64 | Where-Object { $_.DisplayName -like "*wuthering*" } | Select-Object -ExpandProperty InstallPath)
-        if ($gamePath) {
-            if ($gamePath -like "*OneDrive*") { $err += "Ignoré (OneDrive) : $($gamePath)`n" }
-            elseif ($checkedDirectories.Contains($gamePath)) { $err += "Déjà vérifié : $($gamePath)`n" }
-            else {
-                $checkedDirectories.Add($gamePath) | Out-Null
-                $folderFound, $logFound = LogCheck $gamePath
-                if ($logFound)       { $err += "Vérifié : $($gamePath).`n" }
-                elseif ($folderFound) { $err += "Aucun log à $gamePath`n" }
-                else                 { $err += "Aucune installation à $gamePath`n" }
+        $entries = Get-ItemProperty -Path $reg32, $reg64 -ErrorAction SilentlyContinue |
+                   Where-Object { $_.DisplayName -like "*wuthering*" -and $_.InstallPath }
+        if ($entries) {
+            foreach ($entry in $entries) {
+                Step-Spin
+                $gp = [string]$entry.InstallPath
+                if ([string]::IsNullOrWhiteSpace($gp)) { continue }
+                if ($gp -like "*OneDrive*") { $err += "Ignore (OneDrive) : $gp`n"; continue }
+                if ($checkedDirectories.Contains($gp)) { $err += "Deja verifie : $gp`n"; continue }
+                $checkedDirectories.Add($gp) | Out-Null
+                $null = LogCheck $gp
             }
         } else {
-            $err += "Aucune entrée pour le client natif.`n"
+            $err += "Aucune entree pour le client natif.`n"
         }
     } catch {
-        Write-Err "Accès registre impossible : $_"
-        $gamePath = $null
+        $err += "Erreur registre : $_`n"
     }
+    Stop-Spin -result "$($Script:collectedLogFiles.Count) log(s)"
 }
 
+# ============================================================
+#  Phase 4 : Balayage complet des disques (lent, spinner long)
+# ============================================================
 if (!$urlFound) { SearchAllDiskLetters }
 
-# Sélection du log le plus récent et extraction
+# ============================================================
+#  Extraction URL depuis le log le plus recent
+# ============================================================
 if (!$urlFound -and $Script:collectedLogFiles.Count -gt 0) {
-    Write-Host ""
-    Write-Step "$($Script:collectedLogFiles.Count) log(s) trouvé(s). Sélection du plus récent..."
+    Start-Spin -msg "Extraction de l'URL depuis les logs"
     $sortedLogs = $Script:collectedLogFiles | Sort-Object LastWriteTime -Descending
-    foreach ($lf in $sortedLogs) {
-        Write-Debug2 "[$($lf.LastWriteTime)] $($lf.Path)"
-    }
 
     foreach ($logFile in $sortedLogs) {
+        Step-Spin -sub ([System.IO.Path]::GetFileName($logFile.Path))
         $urlToCopy = ExtractUrlFromLog $logFile
         if (![string]::IsNullOrWhiteSpace($urlToCopy)) {
             $urlFound = $true
+            Stop-Spin -result "trouve dans $([System.IO.Path]::GetFileName($logFile.Path))"
+
             Write-Host ""
-            Write-Ok "URL trouvée dans $($logFile.Path)"
+            Write-Host "================================================================" -ForegroundColor DarkGreen
+            Write-Host "  URL d'historique de convocation :" -ForegroundColor Green
             Write-Host ""
             Write-Host "  $urlToCopy" -ForegroundColor White
             Write-Host ""
             Set-Clipboard $urlToCopy
-            Write-Ok "Lien copié dans le presse-papier."
-            Write-Info "Colle-le sur $SlyrafTrackerUrl puis clique sur Importer."
+            Write-Host "  Lien copie dans le presse-papier."        -ForegroundColor Green
+            Write-Host "  -> Colle-le sur $SlyrafTrackerUrl"        -ForegroundColor White
+            Write-Host "     puis clique sur Importer."             -ForegroundColor White
+            Write-Host "================================================================" -ForegroundColor DarkGreen
             break
         }
     }
 
     if (!$urlFound) {
+        Stop-Spin -tag 'ECHEC' -color Yellow -result "aucune URL dans les logs"
         $logFound = $true
-        $err += "Logs trouvés mais aucune URL d'historique. Ouvre l'Historique de Convocation en jeu d'abord.`n"
+        $err += "Logs presents mais aucune URL. Ouvre l'Historique de Convocation en jeu d'abord.`n"
     }
 }
 
 if (!$urlFound -and $Script:collectedLogFiles.Count -eq 0 -and -not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host ""
-    Write-Warn2 "Détection automatique échouée."
-    Write-Info "Certains dossiers nécessitent des droits administrateur."
+    Write-Warn2 "Detection automatique echouee."
+    Write-Info "Certains dossiers necessitent des droits administrateur."
     $retry = Read-Host "Relancer en Administrateur ? (O = oui / N = saisir le chemin manuellement)"
     if ($retry -match '^[OoYy]$') {
-        Write-Info "Redémarrage avec élévation..."
+        Write-Info "Redemarrage avec elevation..."
         $elevatedCommand = "-NoProfile -Command `"iwr -UseBasicParsing -Headers @{'User-Agent'='Mozilla/5.0'} $SlyrafScriptUrl | iex`""
         Start-Process powershell.exe -ArgumentList $elevatedCommand -Verb RunAs
         exit
@@ -436,36 +488,42 @@ if (!$urlFound -and $Script:collectedLogFiles.Count -eq 0 -and -not ([Security.P
 
 $ErrorActionPreference = $originalErrorPreference
 
+# ============================================================
+#  En cas d'echec : dump des details pour debug
+# ============================================================
 if (!$urlFound) {
     Write-Host ""
-    Write-Host "─── Détails ───" -ForegroundColor DarkGray
+    Write-Host "================================================================" -ForegroundColor DarkGray
+    Write-Host "  Details (pour debug)" -ForegroundColor DarkGray
+    Write-Host "================================================================" -ForegroundColor DarkGray
     Write-Host $err -ForegroundColor DarkGray
 }
 
-# Saisie manuelle
+# ============================================================
+#  Saisie manuelle (dernier recours)
+# ============================================================
 while (!$urlFound) {
     Write-Host ""
-    Write-Err "Dossier d'installation introuvable ou logs manquants. As-tu ouvert l'Historique de Convocation en jeu ?"
+    Write-Err "Dossier d'installation introuvable ou logs manquants."
+    Write-Info "As-tu ouvert l'Historique de Convocation en jeu avant de lancer le script ?"
     Write-Host ""
-    Write-Host "Si tu utilises un outil tiers (mod, proxy, autre tracker), désactive-le et réessaye." -ForegroundColor DarkGray
-    Write-Host "En dernier recours, réinstalle le jeu." -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "Pour de l'aide : $SlyrafTrackerUrl" -ForegroundColor DarkCyan
+    Write-Host "  Si tu utilises un outil tiers (mod, proxy, autre tracker), desactive-le." -ForegroundColor DarkGray
+    Write-Host "  En dernier recours, reinstalle le jeu."                                  -ForegroundColor DarkGray
+    Write-Host "  Aide : $SlyrafTrackerUrl"                                                -ForegroundColor DarkCyan
     Write-Host ""
     Write-Info "Sinon, saisis le chemin d'installation du jeu manuellement."
-    Write-Host "Emplacements courants :" -ForegroundColor DarkGray
-    Write-Host "  C:\Wuthering Waves" -ForegroundColor DarkGray
-    Write-Host "  C:\Wuthering Waves\Wuthering Waves Game" -ForegroundColor DarkGray
-    Write-Host "  C:\Program Files\Wuthering Waves\Wuthering Waves Game" -ForegroundColor DarkGray
-    Write-Host "  C:\Program Files\Epic Games\WutheringWavesj3oFh" -ForegroundColor DarkGray
-    Write-Host "  C:\Steam\steamapps\common\Wuthering Waves" -ForegroundColor DarkGray
+    Write-Host "  Emplacements courants :"                                            -ForegroundColor DarkGray
+    Write-Host "    C:\Wuthering Waves"                                               -ForegroundColor DarkGray
+    Write-Host "    C:\Wuthering Waves\Wuthering Waves Game"                          -ForegroundColor DarkGray
+    Write-Host "    C:\Program Files\Wuthering Waves\Wuthering Waves Game"            -ForegroundColor DarkGray
+    Write-Host "    C:\Program Files\Epic Games\WutheringWavesj3oFh"                  -ForegroundColor DarkGray
+    Write-Host "    C:\Steam\steamapps\common\Wuthering Waves"                        -ForegroundColor DarkGray
     Write-Host ""
     $path = Read-Host "Chemin (ou tape `"exit`" pour quitter)"
     if ($path) {
         if ($path.ToLower() -eq "exit") { break }
-        $gamePath = $path
         Write-Host ""
-        Write-Info "Chemin saisi : $($path)"
+        Write-Info "Chemin saisi : $path"
         $folderFound, $logFound = LogCheck $path
         if ($logFound -and $Script:collectedLogFiles.Count -gt 0) {
             $sortedLogs = $Script:collectedLogFiles | Sort-Object LastWriteTime -Descending
@@ -474,33 +532,31 @@ while (!$urlFound) {
                 if (![string]::IsNullOrWhiteSpace($urlToCopy)) {
                     $urlFound = $true
                     Write-Host ""
-                    Write-Ok "URL trouvée dans $($logFile.Path)"
-                    Write-Host ""
-                    Write-Host "  $urlToCopy" -ForegroundColor White
+                    Write-Host "  URL : $urlToCopy" -ForegroundColor White
                     Write-Host ""
                     Set-Clipboard $urlToCopy
-                    Write-Ok "Lien copié dans le presse-papier."
+                    Write-Ok "Lien copie dans le presse-papier."
                     Write-Info "Colle-le sur $SlyrafTrackerUrl puis clique sur Importer."
                     break
                 }
             }
             if (!$urlFound) {
-                Write-Err "URL d'historique introuvable dans Client.log et debug.log. Ouvre l'Historique de Convocation en jeu d'abord."
+                Write-Err "Aucune URL d'historique. Ouvre l'Historique de Convocation en jeu d'abord."
             }
         }
         elseif ($folderFound) {
-            Write-Warn2 "Aucun log trouvé dans $gamePath."
+            Write-Warn2 "Aucun log trouve dans $path."
         }
         else {
-            Write-Err "Dossier introuvable : $path. Vérifie le chemin ou ouvre l'Historique de Convocation."
+            Write-Err "Dossier introuvable : $path."
         }
     }
     else {
-        Write-Err "Chemin vide. Vérifie ton emplacement d'installation."
+        Write-Err "Chemin vide."
     }
 }
 
 Write-Host ""
-Write-Host "─────────────────────────────────────────────" -ForegroundColor DarkGray
-Write-Host "  slyraf.com — fin du script" -ForegroundColor DarkCyan
+Write-Host "================================================================" -ForegroundColor DarkCyan
+Write-Host "  slyraf.com - fin du script"                                     -ForegroundColor DarkCyan
 Write-Host ""
